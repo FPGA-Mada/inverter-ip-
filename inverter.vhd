@@ -1,83 +1,63 @@
-----------------------------------------------------------------------------------
--- Company: 
--- Engineer: 
--- 
--- Create Date: 16.04.2024 15:45:08
--- Design Name: 
--- Module Name: inverter - Behavioral
--- Project Name: 
--- Target Devices: 
--- Tool Versions: 
--- Description: 
--- 
--- Dependencies: 
--- 
--- Revision:
--- Revision 0.01 - File Created
--- Additional Comments:
--- 
-----------------------------------------------------------------------------------
-
-
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
-
--- Uncomment the following library declaration if using
--- arithmetic functions with Signed or Unsigned values
-use IEEE.NUMERIC_STD.ALL;
-
--- Uncomment the following library declaration if instantiating
--- any Xilinx leaf cells in this code.
---library UNISIM;
---use UNISIM.VComponents.all;
+use ieee.numeric_std.all;
 
 entity inverter is
   generic (
-        DATA_WIDTH : integer := 32
+    data_width : integer := 32
   );
   Port (
-        clk : in std_logic;
-        rst : in std_logic;
-        -- axi 4 slave
-        s_valid : in std_logic;
-        s_ready : out std_logic;
-        s_data : in std_logic_vector (DATA_WIDTH -1 downto 0); 
-        -- axi 4 master
-        m_valid : out std_logic;
-        m_ready : in std_logic;
-        m_data : out std_logic_vector (DATA_WIDTH -1 downto 0)
-        
-        );
+    clk          : in  std_logic;
+    reset        : in  std_logic;  -- synchronous active-high reset
+    -- AXI slave interface
+    s_axis_data  : in  std_logic_vector(data_width - 1 downto 0);
+    s_axis_valid : in  std_logic;
+    s_axis_ready : out std_logic;
+
+    -- AXI master interface
+    m_axis_data  : out std_logic_vector(data_width - 1 downto 0);
+    m_axis_valid : out std_logic;
+    m_axis_ready : in  std_logic
+  );
 end inverter;
 
 architecture Behavioral of inverter is
 
+  signal valid_reg : std_logic := '0';
+  signal data_reg  : std_logic_vector(data_width - 1 downto 0) := (others => '0');
+
 begin
 
-    s_ready <= m_ready;
-    
-    process (clk) begin
-        if rising_edge (clk) then
-            if rst = '1' then
-                m_data <= (others => '0');
-            else
-              if (s_valid = '1' and m_ready = '1') then
-                for i in 0 to DATA_WIDTH/8 -1 loop
-                    m_data (i*8+7 downto i*8) <= std_logic_vector (to_unsigned(255, 8) - unsigned(s_data(i*8+7 downto i*8)));
-                end loop;
-              end if;
-            end if;
-        end if ;
-    end process;
-    
-    process (clk) begin
-        if rising_edge (clk) then
-            if rst = '1' then
-                m_valid <= '0';
-            else
-                m_valid <= s_valid;
-            end if;
+  -- Ready: accept new data if buffer is empty or downstream accepted previous data
+  s_axis_ready <= not valid_reg or (valid_reg and m_axis_ready);
+
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      if reset = '1' then  -- synchronous reset
+        valid_reg <= '0';
+        data_reg  <= (others => '0');
+      else
+        -- Clear valid_reg when downstream accepts data
+        if valid_reg = '1' and m_axis_ready = '1' then
+          valid_reg <= '0';
         end if;
-    end process;
+
+        -- Latch new data when upstream valid & ready
+        if s_axis_valid = '1' and s_axis_ready = '1' then
+          valid_reg <= '1';
+          -- Invert each byte: 255 - input_byte
+          for i in 0 to (data_width/8) - 1 loop
+            data_reg((i*8+7) downto i*8) <= std_logic_vector(
+              to_unsigned(255 - to_integer(unsigned(s_axis_data((i*8+7) downto i*8))), 8));
+          end loop;
+        end if;
+      end if;
+    end if;
+  end process;
+
+  -- Output assignments outside process
+  m_axis_valid <= valid_reg;
+  m_axis_data  <= data_reg;
 
 end Behavioral;
