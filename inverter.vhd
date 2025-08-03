@@ -29,7 +29,7 @@ architecture Behavioral of inverter is
 begin
 
   -- Ready: accept new data if buffer is empty or downstream accepted previous data
-  s_axis_ready <= not valid_reg or  and m_axis_ready;
+  s_axis_ready <= not valid_reg or  m_axis_ready;
 
   process(clk)
   begin
